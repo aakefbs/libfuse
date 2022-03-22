@@ -82,6 +82,9 @@
 
 using namespace std;
 
+#define SFS_DEFAULT_THREADS "10"
+#define SFS_DEFAULT_CLONE_FD "0"
+
 /* We are re-using pointers to our `struct sfs_inode` and `struct
    sfs_dirp` elements as inodes and file handles. This means that we
    must be able to store pointer a pointer in both a fuse_ino_t
@@ -149,11 +152,16 @@ struct Fs {
     Inode root;
     double timeout;
     bool debug;
+    bool foreground;
     std::string source;
     size_t blocksize;
     dev_t src_dev;
     bool nosplice;
     bool nocache;
+    int clone_fd:1;
+    int dynamic_threads:1;
+
+    size_t num_threads;
 };
 static Fs fs{};
 
@@ -1176,10 +1184,16 @@ static cxxopts::ParseResult parse_options(int argc, char **argv) {
     opt_parser.add_options()
         ("debug", "Enable filesystem debug messages")
         ("debug-fuse", "Enable libfuse debug messages")
+        ("foreground", "Run in foreground")
         ("help", "Print help")
         ("nocache", "Disable all caching")
         ("nosplice", "Do not use splice(2) to transfer data")
-        ("single", "Run single-threaded");
+        ("single", "Run single-threaded")
+        ("dynamic_threads", "Starts threads dynamically")
+        ("num_threads", "Number of libfuse worker threads",
+                        cxxopts::value<size_t>()->default_value(SFS_DEFAULT_THREADS))
+        ("clone_fd", "use separate fuse device fd for each thread");
+
 
     // FIXME: Find a better way to limit the try clause to just
     // opt_parser.parse() (cf. https://github.com/jarro2783/cxxopts/issues/146)
@@ -1201,7 +1215,11 @@ static cxxopts::ParseResult parse_options(int argc, char **argv) {
     }
 
     fs.debug = options.count("debug") != 0;
+    fs.foreground = options.count("foreground") != 0;
     fs.nosplice = options.count("nosplice") != 0;
+    fs.num_threads = options["num_threads"].as<size_t>();
+    fs.clone_fd = options.count("clone_fd") != 0;
+    fs.dynamic_threads = options.count("dynamic_threads") != 0;
     char* resolved_path = realpath(argv[1], NULL);
     if (resolved_path == NULL)
         warn("WARNING: realpath() failed with");
@@ -1232,6 +1250,7 @@ int main(int argc, char *argv[]) {
 
     // Parse command line options
     auto options {parse_options(argc, argv)};
+
 
     // We need an fd for every dentry in our the filesystem that the
     // kernel knows about. This is way more than most processes need,
@@ -1275,8 +1294,13 @@ int main(int argc, char *argv[]) {
     // Don't apply umask, use modes exactly as specified
     umask(0);
 
+    fuse_daemonize(fs.foreground);
+
     // Mount and run main loop
     loop_config = fuse_loop_cfg_create();
+    fuse_loop_cfg_set_clone_fd(loop_config, fs.clone_fd);
+    fuse_loop_cfg_set_max_threads(loop_config, fs.num_threads);
+    fuse_loop_cfg_set_dynamic_thread_startup(loop_config, fs.dynamic_threads);
 
     if (fuse_session_mount(se, argv[2]) != 0)
         goto err_out3;
