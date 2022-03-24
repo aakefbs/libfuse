@@ -131,6 +131,15 @@ struct fuse_loop_config
 	 * The special value of -1 means that this parameter is disabled.
 	 */
 	int max_idle_threads;
+
+	/**
+	 *  max number of threads taking and processing kernel requests
+	 *
+	 *  As of now threads are created dynamically
+	 */
+	unsigned int max_threads;
+
+
 };
 
 /* ----------------------------------------------------------- *

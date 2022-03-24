@@ -178,6 +178,7 @@ FUSE_3.11 {
 		fuse_loop_cfg_create;
 		fuse_loop_cfg_destroy;
 		fuse_loop_cfg_set_idle_threads;
+		fuse_loop_cfg_set_max_threads;
 		fuse_loop_cfg_set_clone_fd;
 		fuse_loop_cfg_convert;
 } FUSE_3.4;

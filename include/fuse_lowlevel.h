@@ -1877,7 +1877,9 @@ struct fuse_cmdline_opts {
 	int show_version;
 	int show_help;
 	int clone_fd;
-	unsigned int max_idle_threads;
+	unsigned int max_idle_threads; /* discouraged, due to thread
+	                                * destruct overhead */
+	unsigned int max_threads;
 };
 
 /**

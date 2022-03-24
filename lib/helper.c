@@ -50,6 +50,7 @@ static const struct fuse_opt fuse_helper_opts[] = {
 #endif
 	FUSE_HELPER_OPT("clone_fd",	clone_fd),
 	FUSE_HELPER_OPT("max_idle_threads=%u", max_idle_threads),
+	FUSE_HELPER_OPT("max_threads=%u", max_threads),
 	FUSE_OPT_END
 };
 
@@ -136,6 +137,8 @@ void fuse_cmdline_help(void)
 	       "    -o clone_fd            use separate fuse device fd for each thread\n"
 	       "                           (may improve performance)\n"
 	       "    -o max_idle_threads    the maximum number of idle worker threads\n"
+	       "                           allowed (default: -1)\n"
+	       "    -o max_threads         the maximum number of worker threads\n"
 	       "                           allowed (default: 10)\n");
 }
 
@@ -204,7 +207,8 @@ int fuse_parse_cmdline(struct fuse_args *args,
 {
 	memset(opts, 0, sizeof(struct fuse_cmdline_opts));
 
-	opts->max_idle_threads = 10;
+	opts->max_idle_threads = -1; /* new default in fuse version 3.11 */
+	opts->max_threads = 10;
 
 	if (fuse_opt_parse(args, opts, fuse_helper_opts,
 			   fuse_helper_opt_proc) == -1)
