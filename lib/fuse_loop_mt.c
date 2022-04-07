@@ -34,6 +34,7 @@
 #define FUSE_LOOP_MT_DEF_MAX_THREADS 10
 #define FUSE_LOOP_MT_DEF_IDLE_THREADS -1 /* thread destruction is disabled
                                           * by default */
+#define FUSE_LOOP_MT_DEF_INIT_STARTS_THREADS 0
 
 struct fuse_worker {
 	struct fuse_worker *prev;
@@ -59,6 +60,7 @@ struct fuse_mt {
 	int clone_fd;
 	int max_idle;
 	int max_threads;
+	int threads_created_at_startup;
 };
 
 static struct fuse_chan *fuse_chan_new(int fd)
@@ -329,6 +331,7 @@ int err;
 	struct fuse_mt mt;
 	struct fuse_worker *w;
 	int created_config = 0;
+	int n_start_threads = 1;
 
 	if (config) {
 		err = fuse_loop_cfg_verify(config);
@@ -340,6 +343,9 @@ int err;
 		created_config = 1;
 	}
 
+	if (config->threads_created_at_startup)
+		n_start_threads = config->max_threads;
+
 
 	memset(&mt, 0, sizeof(struct fuse_mt));
 	mt.se = se;
@@ -349,13 +355,18 @@ int err;
 	mt.numavail = 0;
 	mt.max_idle = config->max_idle_threads;
 	mt.max_threads = config->max_threads;
+	mt.threads_created_at_startup = config->threads_created_at_startup;
 	mt.main.thread_id = pthread_self();
 	mt.main.prev = mt.main.next = &mt.main;
 	sem_init(&mt.finish, 0, 0);
 	pthread_mutex_init(&mt.lock, NULL);
 
 	pthread_mutex_lock(&mt.lock);
-	err = fuse_loop_start_thread(&mt);
+	for (int i = 0; i < n_start_threads; i++) {
+		err = fuse_loop_start_thread(&mt);
+		if (err)
+			break;
+	}
 	pthread_mutex_unlock(&mt.lock);
 	if (!err) {
 		/* sem_wait() is interruptible */
@@ -432,6 +443,7 @@ struct fuse_loop_config *fuse_loop_cfg_create(void)
 	config->max_idle_threads = FUSE_LOOP_MT_DEF_IDLE_THREADS;
 	config->max_threads      = FUSE_LOOP_MT_DEF_MAX_THREADS;
 	config->clone_fd         = FUSE_LOOP_MT_DEF_CLONE_FD;
+	config->threads_created_at_startup = FUSE_LOOP_MT_DEF_INIT_STARTS_THREADS;
 
 	return config;
 }
@@ -445,6 +457,13 @@ int fuse_loop_cfg_verify(struct fuse_loop_config *config)
 {
 	if (config->version_id != FUSE_LOOP_MT_V2_IDENTIFIER)
 		return -EINVAL;
+
+	if (config->threads_created_at_startup && config->max_idle_threads != -1) {
+		fuse_log(FUSE_LOG_ERR,
+				"Invalid configuration, setting max_idle_threads and "
+				"threads_created_at_startup is contracticting.");
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -461,6 +480,16 @@ void fuse_loop_cfg_set_idle_threads(struct fuse_loop_config *config,
 				    unsigned int value)
 {
 	config->max_idle_threads = value;
+
+	/* No point to pre-create all threads if there is max-idle is configured,
+	 * thread creation is then done dynamically.
+	 * When threads are created at startup time this also might be set into
+	 * the kernel to let it know how many threads there are and to let
+	 * it manage these threads - dynamic thread creation with max-idle is
+	 * conflicting for that.
+	 */
+	config->threads_created_at_startup = 0;
+
 }
 
 void fuse_loop_cfg_set_max_threads(struct fuse_loop_config *config,
@@ -473,5 +502,12 @@ void fuse_loop_cfg_set_clone_fd(struct fuse_loop_config *config,
 				unsigned int value)
 {
 	config->clone_fd = value;
+}
+
+void fuse_loop_cfg_set_dynamic_thread_startup(struct fuse_loop_config *config,
+						 unsigned int value)
+{
+	/* dynamic and create-at-at-start are the opposite of each other */
+	config->threads_created_at_startup = value > 0 ? 0 : 1;
 }
 

@@ -181,6 +181,7 @@ FUSE_3.11 {
 		fuse_loop_cfg_set_max_threads;
 		fuse_loop_cfg_set_clone_fd;
 		fuse_loop_cfg_convert;
+		fuse_loop_cfg_set_dynamic_thread_startup;
 } FUSE_3.4;
 
 # Local Variables:

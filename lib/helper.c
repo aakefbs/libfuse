@@ -51,6 +51,7 @@ static const struct fuse_opt fuse_helper_opts[] = {
 	FUSE_HELPER_OPT("clone_fd",	clone_fd),
 	FUSE_HELPER_OPT("max_idle_threads=%u", max_idle_threads),
 	FUSE_HELPER_OPT("max_threads=%u", max_threads),
+	FUSE_HELPER_OPT("dyn_threads", dynamic_threads),
 	FUSE_OPT_END
 };
 
@@ -139,7 +140,9 @@ void fuse_cmdline_help(void)
 	       "    -o max_idle_threads    the maximum number of idle worker threads\n"
 	       "                           allowed (default: -1)\n"
 	       "    -o max_threads         the maximum number of worker threads\n"
-	       "                           allowed (default: 10)\n");
+	       "                           allowed (default: 10)\n"
+	       "    -o dyn_threads         start threads dynamically\n"
+		);
 }
 
 static int fuse_helper_opt_proc(void *data, const char *arg, int key,
@@ -352,6 +355,9 @@ int fuse_main_real(int argc, char *argv[], const struct fuse_operations *op,
 		fuse_loop_cfg_set_clone_fd(loop_config, opts.clone_fd);
 
 		fuse_loop_cfg_set_idle_threads(loop_config, opts.max_idle_threads);
+
+		fuse_loop_cfg_set_dynamic_thread_startup(loop_config,
+							    opts.dynamic_threads);
 		res = fuse_loop_mt(fuse, loop_config);
 	}
 	if (res)

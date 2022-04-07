@@ -1880,6 +1880,7 @@ struct fuse_cmdline_opts {
 	unsigned int max_idle_threads; /* discouraged, due to thread
 	                                * destruct overhead */
 	unsigned int max_threads;
+	unsigned int dynamic_threads;
 };
 
 /**

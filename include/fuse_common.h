@@ -869,6 +869,16 @@ void fuse_loop_cfg_set_max_threads(struct fuse_loop_config *config,
 				   unsigned int value);
 
 /**
+ * setter to set or uset that all worker threads are started at once instead
+ * of doing it dynamically when libfuse believes it is needed.
+ * It is typically recommended to start all threads at once at thread
+ * creation might have some overhead at run time and additionally the kernel
+ * might gain a better scheduling if it knows about all possible threads.
+ */
+void fuse_loop_cfg_set_dynamic_thread_startup(struct fuse_loop_config *config,
+					      unsigned int value);
+
+/**
  * fuse_loop_config setter to enable the clone_fd feature
  */
 void fuse_loop_cfg_set_clone_fd(struct fuse_loop_config *config,

@@ -139,7 +139,13 @@ struct fuse_loop_config
 	 */
 	unsigned int max_threads;
 
+	/**
+	 * All threads reading and handling fuse device requests are created
+	 * at startup time.
+	 */
+	uint32_t threads_created_at_startup:1;
 
+	uint32_t unused_bits:31;
 };
 
 /* ----------------------------------------------------------- *
