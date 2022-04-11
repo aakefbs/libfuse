@@ -312,6 +312,8 @@ struct fuse_file_lock {
 /* bits 32..63 get shifted down 32 bits into the flags2 field */
 #define FUSE_SECURITY_CTX	(1ULL << 32)
 #define FUSE_HAS_INODE_DAX	(1ULL << 33)
+#define FUSE_N_DEV_READ_THREADS	(1ULL << 34) /* num userspace dev read threads */
+#define FUSE_DEV_THREAD_SPIN	(1ULL << 35)
 
 /**
  * CUSE INIT request/reply flags
@@ -667,7 +669,10 @@ struct fuse_init_out {
 	uint16_t	max_pages;
 	uint16_t	map_alignment;
 	uint32_t	flags2;
-	uint32_t	unused[7];
+	uint16_t 	num_userspace_threads;
+	uint8_t 	thread_spin_jiffies;
+	uint8_t 	unused8_t;
+	uint32_t	unused[6];
 };
 
 #define CUSE_INIT_INFO_MAX 4096

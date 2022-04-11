@@ -84,6 +84,7 @@ using namespace std;
 
 #define SFS_DEFAULT_THREADS "10"
 #define SFS_DEFAULT_CLONE_FD "0"
+#define SFS_DEFAULT_THREAD_SPIN_JIFFIES "1"
 
 /* We are re-using pointers to our `struct sfs_inode` and `struct
    sfs_dirp` elements as inodes and file handles. This means that we
@@ -160,6 +161,7 @@ struct Fs {
     bool nocache;
     int clone_fd:1;
     int dynamic_threads:1;
+    size_t thread_spin_jiffies;
 
     size_t num_threads;
 };
@@ -214,6 +216,11 @@ static void sfs_init(void *userdata, fuse_conn_info *conn) {
             conn->want |= FUSE_CAP_SPLICE_WRITE;
         if (conn->capable & FUSE_CAP_SPLICE_READ)
             conn->want |= FUSE_CAP_SPLICE_READ;
+    }
+
+    if (fs.thread_spin_jiffies  > 0 && conn->capable & FUSE_CAP_THREAD_SPIN) {
+            conn->want |= FUSE_CAP_THREAD_SPIN;
+            conn->thread_spin_jiffies = fs.thread_spin_jiffies;
     }
 }
 
@@ -1191,7 +1198,9 @@ static cxxopts::ParseResult parse_options(int argc, char **argv) {
         ("single", "Run single-threaded")
         ("dynamic_threads", "Starts threads dynamically")
         ("num_threads", "Number of libfuse worker threads",
-                        cxxopts::value<size_t>()->default_value(SFS_DEFAULT_THREADS))
+          cxxopts::value<size_t>()->default_value(SFS_DEFAULT_THREADS))
+        ("thread_spin_jiffies", "Amount of jffifies to spin in the kernel for work",
+          cxxopts::value<size_t>()->default_value(SFS_DEFAULT_THREAD_SPIN_JIFFIES))
         ("clone_fd", "use separate fuse device fd for each thread");
 
 
@@ -1220,6 +1229,7 @@ static cxxopts::ParseResult parse_options(int argc, char **argv) {
     fs.num_threads = options["num_threads"].as<size_t>();
     fs.clone_fd = options.count("clone_fd") != 0;
     fs.dynamic_threads = options.count("dynamic_threads") != 0;
+    fs.thread_spin_jiffies = options["thread_spin_jiffies"].as<size_t>();
     char* resolved_path = realpath(argv[1], NULL);
     if (resolved_path == NULL)
         warn("WARNING: realpath() failed with");

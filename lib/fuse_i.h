@@ -64,6 +64,7 @@ struct fuse_session {
 	struct fuse_notify_req notify_list;
 	size_t bufsize;
 	int error;
+	struct fuse_loop_config *loop_config;
 };
 
 struct fuse_chan {

@@ -409,6 +409,21 @@ struct fuse_loop_config_v1 {
 #define FUSE_CAP_EXPLICIT_INVAL_DATA    (1 << 25)
 
 /**
+ * Indicates that kernel support thread spin before going to a waitq.
+ *
+ * If this is set CPU usage will be increased due to spinning, but latency
+ * and performance might be increased.
+ *
+ */
+#define FUSE_CAP_THREAD_SPIN            (1 << 26)
+
+/**
+ * Indicates the kernel supports improved thread management and needs
+ * to know the number of user space threads working on fuse device requests
+ */
+#define FUSE_CAP_N_DEV_READ_THREADS     (1 << 28)
+
+/**
  * Ioctl flags
  *
  * FUSE_IOCTL_COMPAT: 32bit compat ioctl on 64bit machine
@@ -538,9 +553,15 @@ struct fuse_conn_info {
 	unsigned time_gran;
 
 	/**
+	 * Number of jiffies to let threads spin in the fuse dev request
+	 * reading function before going to sleep.
+	 */
+	unsigned thread_spin_jiffies;
+
+	/**
 	 * For future use.
 	 */
-	unsigned reserved[22];
+	unsigned reserved[21];
 };
 
 struct fuse_session;

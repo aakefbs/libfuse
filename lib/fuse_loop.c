@@ -23,6 +23,13 @@ int fuse_session_loop(struct fuse_session *se)
 		.mem = NULL,
 	};
 
+	/* Add the config here, as the kernel module might want to know
+	 * about the number of threads
+	 */
+	struct fuse_loop_config *loop_config = fuse_loop_cfg_create();
+	fuse_loop_cfg_set_max_threads(loop_config, 1);
+	se->loop_config = loop_config;
+
 	while (!fuse_session_exited(se)) {
 		res = fuse_session_receive_buf_int(se, &fbuf, NULL);
 
@@ -42,5 +49,6 @@ int fuse_session_loop(struct fuse_session *se)
 	if(se->error != 0)
 		res = se->error;
 	fuse_session_reset(se);
+	fuse_loop_cfg_destroy(loop_config);
 	return res;
 }

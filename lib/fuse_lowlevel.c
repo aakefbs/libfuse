@@ -1981,6 +1981,10 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 			se->conn.capable |= FUSE_CAP_NO_OPENDIR_SUPPORT;
 		if (inargflags & FUSE_EXPLICIT_INVAL_DATA)
 			se->conn.capable |= FUSE_CAP_EXPLICIT_INVAL_DATA;
+		if (inargflags & FUSE_DEV_THREAD_SPIN)
+			se->conn.capable |= FUSE_CAP_THREAD_SPIN;
+		if (inargflags & FUSE_N_DEV_READ_THREADS)
+			se->conn.capable |= FUSE_CAP_N_DEV_READ_THREADS;
 		if (!(inargflags & FUSE_MAX_PAGES)) {
 			size_t max_bufsize =
 				FUSE_DEFAULT_MAX_PAGES_PER_REQ * getpagesize()
@@ -2030,6 +2034,12 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		       FUSE_CAP_READDIRPLUS_AUTO);
 	se->conn.time_gran = 1;
 	
+	/* This just adds the possibility about number of threads and spin.
+	 * It is configured further below.
+	 */
+	LL_SET_DEFAULT(1, FUSE_CAP_N_DEV_READ_THREADS);
+	LL_SET_DEFAULT(1, FUSE_CAP_THREAD_SPIN);
+
 	if (bufsize < FUSE_MIN_READ_BUFFER) {
 		fuse_log(FUSE_LOG_ERR, "fuse: warning: buffer size too small: %zu\n",
 			bufsize);
@@ -2072,6 +2082,7 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 		outarg.flags |= FUSE_MAX_PAGES;
 		outarg.max_pages = (se->conn.max_write - 1) / getpagesize() + 1;
 	}
+
 	outargflags = outarg.flags;
 	/* Always enable big writes, this is superseded
 	   by the max_write option */
@@ -2110,6 +2121,18 @@ void do_init(fuse_req_t req, fuse_ino_t nodeid, const void *inarg)
 
 	if (inargflags & FUSE_INIT_EXT)
 		outarg.flags2 = outargflags >> 32;
+
+	if (se->conn.want & FUSE_CAP_THREAD_SPIN)
+		outarg.thread_spin_jiffies = se->conn.thread_spin_jiffies;
+
+	if (se->conn.want & FUSE_CAP_N_DEV_READ_THREADS) {
+		if (se->loop_config &&
+		    se->loop_config->threads_created_at_startup)
+			outarg.num_userspace_threads = se->loop_config->max_threads;
+		else
+			outarg.num_userspace_threads = UINT16_MAX;
+	}
+
 	outarg.max_readahead = se->conn.max_readahead;
 	outarg.max_write = se->conn.max_write;
 	if (se->conn.proto_minor >= 13) {
@@ -2934,6 +2957,7 @@ struct fuse_session *fuse_session_new(struct fuse_args *args,
 	se->fd = -1;
 	se->conn.max_write = UINT_MAX;
 	se->conn.max_readahead = UINT_MAX;
+	se->conn.thread_spin_jiffies = 0;
 
 	/* Parse options */
 	if(fuse_opt_parse(args, se, fuse_ll_opts, NULL) == -1)
@@ -2989,6 +3013,9 @@ struct fuse_session *fuse_session_new(struct fuse_args *args,
 	se->userdata = userdata;
 
 	se->mo = mo;
+
+	se->loop_config = NULL; /* config not available yet */
+
 	return se;
 
 out5:
@@ -3150,6 +3177,7 @@ void fuse_session_exit(struct fuse_session *se)
 __attribute__((no_sanitize_thread))
 void fuse_session_reset(struct fuse_session *se)
 {
+	se->loop_config = NULL;
 	se->exited = 0;
 	se->error = 0;
 }

@@ -347,6 +347,8 @@ int err;
 		n_start_threads = config->max_threads;
 
 
+	se->loop_config = config;
+
 	memset(&mt, 0, sizeof(struct fuse_mt));
 	mt.se = se;
 	mt.clone_fd = config->clone_fd;
