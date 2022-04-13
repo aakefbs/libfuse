@@ -878,6 +878,15 @@ struct fuse_loop_config *fuse_loop_cfg_create(void);
 void fuse_loop_cfg_destroy(struct fuse_loop_config *config);
 
 /**
+ * Convert old config to more recernt fuse_loop_config2
+ *
+ * @param config current config2 type
+ * @param old_conf older config1 type (below FUSE API 33)
+ */
+void fuse_loop_cfg_convert(struct fuse_loop_config *config,
+			   struct fuse_loop_config_v1 *v1_conf);
+
+/**
  * fuse_loop_config setter to set the number of max idle threads.
  */
 void fuse_loop_cfg_set_idle_threads(struct fuse_loop_config *config,
@@ -906,13 +915,19 @@ void fuse_loop_cfg_set_clone_fd(struct fuse_loop_config *config,
 				unsigned int value);
 
 /**
- * Convert old config to more recernt fuse_loop_config2
  *
- * @param config current config2 type
- * @param old_conf older config1 type (below FUSE API 33)
+ * @policy string policy value that will be parsed into the corresponding
+ *         numeric value (SCHED_FIFO, SCHED_OTHER, etc)
+ * @return negative standard error code if the passed string does not match
+ *         any numeric value or 0
+ *         Note: Succes in parsing does not mean that the scheduler can be
+ *               actually used later on.
  */
-void fuse_loop_cfg_convert(struct fuse_loop_config *config,
-			   struct fuse_loop_config_v1 *v1_conf);
+int fuse_loop_cfg_set_sched_policy(struct fuse_loop_config *config,
+				   const char * const policy);
+
+void fuse_loop_cfg_set_sched_prio(struct fuse_loop_config *config, int prio);
+
 
 /* ----------------------------------------------------------- *
  * Compatibility stuff					       *

@@ -182,6 +182,10 @@ FUSE_3.11 {
 		fuse_loop_cfg_set_clone_fd;
 		fuse_loop_cfg_convert;
 		fuse_loop_cfg_set_dynamic_thread_startup;
+		fuse_loop_cfg_set_sched_prio;
+		fuse_loop_cfg_convert;
+		fuse_loop_cfg_set_sched_policy;
+		fuse_loop_cfg_set_sched_prio;
 } FUSE_3.4;
 
 # Local Variables:

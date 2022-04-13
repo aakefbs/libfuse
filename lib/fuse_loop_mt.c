@@ -8,6 +8,8 @@
   See the file COPYING.LIB.
 */
 
+#define _GNU_SOURCE
+
 #include "config.h"
 #include "fuse_lowlevel.h"
 #include "fuse_misc.h"
@@ -25,6 +27,9 @@
 #include <sys/ioctl.h>
 #include <assert.h>
 #include <limits.h>
+#include <sched.h>
+#include <sys/syscall.h>
+#include <stdatomic.h>
 
 /* Environment var controlling the thread stack size */
 #define ENVNAME_THREAD_STACK "FUSE_THREAD_STACK"
@@ -61,6 +66,8 @@ struct fuse_mt {
 	int max_idle;
 	int max_threads;
 	int threads_created_at_startup;
+	int sched_policy;
+	int sched_prio;
 };
 
 static struct fuse_chan *fuse_chan_new(int fd)
@@ -123,10 +130,113 @@ static void list_del_worker(struct fuse_worker *w)
 
 static int fuse_loop_start_thread(struct fuse_mt *mt);
 
+/**
+ * Avoid reporting the same error for all threads - only report scheduler
+ * getting/setting errors once
+ */
+static void fuse_sched_log_err(const char *str, int saved_errno)
+{
+	static _Atomic int err_reported = 0;
+	int old = 0;
+
+	if (atomic_compare_exchange_strong(&err_reported, &old ,1))
+		fuse_log(FUSE_LOG_ERR, "%s : %s", str, strerror(saved_errno));
+}
+
+#if __linux__ && defined SCHED_DEADLINE
+static void fuse_set_sched_deadline(int prio)
+{
+	int res;
+
+	/* defined with #include <linux/sched/types.h>, but that redefines
+	 * sched_param and include fails therefore
+	 */
+	struct sched_attr {
+		__u32 size;
+
+		__u32 sched_policy;
+		__u64 sched_flags;
+
+		/* SCHED_NORMAL, SCHED_BATCH */
+		__s32 sched_nice;
+
+		/* SCHED_FIFO, SCHED_RR */
+		__u32 sched_priority;
+
+		/* SCHED_DEADLINE */
+		__u64 sched_runtime;
+		__u64 sched_deadline;
+		__u64 sched_period;
+
+		/* Utilization hints */
+		__u32 sched_util_min;
+		__u32 sched_util_max;
+
+	};
+
+	struct sched_attr attr = {
+		.size = sizeof(attr),
+		.sched_policy  = SCHED_DEADLINE,
+		.sched_flags = 0,
+		.sched_nice = 0, /* make configurable ? */
+		.sched_priority = prio,
+		/* deadline values - needs to become confiurable */
+		.sched_runtime = 10 * 1000 * 1000,
+		.sched_deadline = 30 * 1000 * 1000,
+		.sched_period = 30 * 1000 * 1000,
+	};
+
+	res = syscall(__NR_sched_setattr, 0 /*self */, attr, 0);
+
+	if (res != 0)
+		fuse_sched_log_err("Setting deadline syscall failed", errno);
+}
+#endif
+
+static void set_thread_scheduling(struct fuse_mt *mt)
+{
+	int res;
+	struct sched_param param;
+	int policy = mt->sched_policy;
+	int prio = mt->sched_prio;
+
+	if (mt->sched_policy == INT_MAX && mt->sched_prio == INT_MAX)
+		return; /* no scheduler override */
+
+	/* get the current values */
+	res = pthread_getschedparam(pthread_self(), &policy, &param);
+	if (res != 0) {
+		fuse_sched_log_err("pthread_getschedparam() failed", errno);
+		return;
+	}
+	prio = param.sched_priority;
+
+	if (mt->sched_policy != INT_MAX)
+		policy = mt->sched_policy;
+
+	if (mt->sched_prio != INT_MAX)
+		prio = mt->sched_prio;
+
+#if __linux__ && defined SCHED_DEADLINE
+	if (mt->sched_policy == SCHED_DEADLINE) {
+		fuse_set_sched_deadline(prio);
+		return;
+	}
+#endif
+
+	param.sched_priority = mt->sched_prio;
+
+	res = pthread_setschedparam(pthread_self(), mt->sched_policy, &param);
+	if (res != 0)
+		fuse_sched_log_err("sched_setattr() failed", errno);
+}
+
 static void *fuse_do_work(void *data)
 {
 	struct fuse_worker *w = (struct fuse_worker *) data;
 	struct fuse_mt *mt = w->mt;
+
+	set_thread_scheduling(mt);
 
 	while (!fuse_session_exited(mt->se)) {
 		int isforget = 0;
@@ -360,6 +470,8 @@ int err;
 	mt.threads_created_at_startup = config->threads_created_at_startup;
 	mt.main.thread_id = pthread_self();
 	mt.main.prev = mt.main.next = &mt.main;
+	mt.sched_policy = config->thread_policy;
+	mt.sched_prio   = config->thread_prio;
 	sem_init(&mt.finish, 0, 0);
 	pthread_mutex_init(&mt.lock, NULL);
 
@@ -507,9 +619,72 @@ void fuse_loop_cfg_set_clone_fd(struct fuse_loop_config *config,
 }
 
 void fuse_loop_cfg_set_dynamic_thread_startup(struct fuse_loop_config *config,
-						 unsigned int value)
+					      unsigned int value)
 {
 	/* dynamic and create-at-at-start are the opposite of each other */
 	config->threads_created_at_startup = value > 0 ? 0 : 1;
 }
 
+static int fuse_loop_cfg_sched_policy_cmp(const char * const sched,
+					  const char * const option)
+{
+	return strncmp(sched, option, strlen(sched));
+}
+
+static int fuse_loop_cfg_sched_policy_str2val(const char * const policy)
+{
+	if (fuse_loop_cfg_sched_policy_cmp("SCHED_FIFO", policy))
+		return SCHED_FIFO;
+
+	if (fuse_loop_cfg_sched_policy_cmp("SCHED_RR", policy))
+		return SCHED_RR;
+
+	if (fuse_loop_cfg_sched_policy_cmp("SCHED_OTHER", policy))
+		return SCHED_OTHER;
+
+	/* GNU values below */
+
+#ifdef SCHED_BATCH
+	if (fuse_loop_cfg_sched_policy_cmp("SCHED_BATCH", policy))
+		return SCHED_BATCH;
+#endif
+
+#ifdef SCHED_ISO
+	if (fuse_loop_cfg_sched_policy_cmp("SCHED_ISO", policy))
+		return SCHED_ISO;
+#endif
+
+#ifdef SCHED_IDLE
+	if (fuse_loop_cfg_sched_policy_cmp("SCHED_IDLE", policy))
+		return SCHED_IDLE;
+#endif
+
+#ifdef SCHED_IDLE
+	if (fuse_loop_cfg_sched_policy_cmp("SCHED_DEADLINE", policy))
+		return SCHED_DEADLINE;
+#endif
+
+	return -EINVAL;
+}
+
+/* TODO: Add a function to get the policy as numeric value? */
+int fuse_loop_cfg_set_sched_policy(struct fuse_loop_config *config,
+				   const char * const policy)
+{
+	int value = fuse_loop_cfg_sched_policy_str2val(policy);
+	if (value < 0)
+		return value;
+
+	config->thread_policy = value;
+
+	const size_t len = sizeof(config->thread_policy_str);
+	memset(config->thread_policy_str, 0, len); /* ensure terminated string */
+	strncpy(config->thread_policy_str, policy, len - 1);
+
+	return 0;
+}
+
+void fuse_loop_cfg_set_sched_prio(struct fuse_loop_config *config, int prio)
+{
+	config->thread_prio = prio;
+}

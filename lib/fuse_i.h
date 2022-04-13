@@ -147,6 +147,11 @@ struct fuse_loop_config
 	uint32_t threads_created_at_startup:1;
 
 	uint32_t unused_bits:31;
+
+	/* scheduler settings */
+	char thread_policy_str[33];
+	int thread_policy; /* pthread_attr_setschedpolicy */
+	int thread_prio;   /* pthread_setschedprio */
 };
 
 /* ----------------------------------------------------------- *

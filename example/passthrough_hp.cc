@@ -85,6 +85,7 @@ using namespace std;
 #define SFS_DEFAULT_THREADS "10"
 #define SFS_DEFAULT_CLONE_FD "0"
 #define SFS_DEFAULT_THREAD_SPIN_JIFFIES "1"
+#define SFS_DEFAULT_SCHED_PRIO "UINT_MAX" /* unset */
 
 /* We are re-using pointers to our `struct sfs_inode` and `struct
    sfs_dirp` elements as inodes and file handles. This means that we
@@ -162,6 +163,8 @@ struct Fs {
     int clone_fd:1;
     int dynamic_threads:1;
     size_t thread_spin_jiffies;
+    string sched_policy;
+    int sched_prio;
 
     size_t num_threads;
 };
@@ -1201,7 +1204,10 @@ static cxxopts::ParseResult parse_options(int argc, char **argv) {
           cxxopts::value<size_t>()->default_value(SFS_DEFAULT_THREADS))
         ("thread_spin_jiffies", "Amount of jffifies to spin in the kernel for work",
           cxxopts::value<size_t>()->default_value(SFS_DEFAULT_THREAD_SPIN_JIFFIES))
-        ("clone_fd", "use separate fuse device fd for each thread");
+        ("clone_fd", "use separate fuse device fd for each thread")
+	("sched_policy", "The scheduler policy for fuse request threads")
+	("sched_prio", "The scheduler priority",
+	 cxxopts::value<int>()->default_value(SFS_DEFAULT_SCHED_PRIO));
 
 
     // FIXME: Find a better way to limit the try clause to just
@@ -1230,6 +1236,8 @@ static cxxopts::ParseResult parse_options(int argc, char **argv) {
     fs.clone_fd = options.count("clone_fd") != 0;
     fs.dynamic_threads = options.count("dynamic_threads") != 0;
     fs.thread_spin_jiffies = options["thread_spin_jiffies"].as<size_t>();
+    fs.sched_policy = options["sched_policy"].as<string>();
+    fs.sched_prio = options["sched_prio"].as<int>();
     char* resolved_path = realpath(argv[1], NULL);
     if (resolved_path == NULL)
         warn("WARNING: realpath() failed with");
@@ -1311,6 +1319,12 @@ int main(int argc, char *argv[]) {
     fuse_loop_cfg_set_clone_fd(loop_config, fs.clone_fd);
     fuse_loop_cfg_set_max_threads(loop_config, fs.num_threads);
     fuse_loop_cfg_set_dynamic_thread_startup(loop_config, fs.dynamic_threads);
+
+    if (!fs.sched_policy.empty())
+        fuse_loop_cfg_set_sched_policy(loop_config, fs.sched_policy.c_str());
+
+    if (fs.sched_prio != UINT_MAX)
+        fuse_loop_cfg_set_sched_prio(loop_config, fs.sched_prio);
 
     if (fuse_session_mount(se, argv[2]) != 0)
         goto err_out3;
