@@ -15,14 +15,10 @@
   Note: "@@" denotes the default symbol, "@" is binary a compat version.
 
 */
-#ifndef __APPLE__
-# if HAVE_SYMVER_ATTRIBUTE
-#  define FUSE_SYMVER(sym1, sym2) __attribute__ ((symver (sym2)))
-# else
-#  define FUSE_SYMVER(sym1, sym2) __asm__("\t.symver " sym1 "," sym2);
-# endif
+#if HAVE_SYMVER_ATTRIBUTE
+# define FUSE_SYMVER(sym1, sym2) __attribute__ ((symver (sym2)))
 #else
-#define FUSE_SYMVER(sym1, sym2)
+# define FUSE_SYMVER(sym1, sym2) __asm__("\t.symver " sym1 "," sym2);
 #endif
 
 #ifdef HAVE_STRUCT_STAT_ST_ATIM
