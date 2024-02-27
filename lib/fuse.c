@@ -3618,10 +3618,8 @@ static int readdir_fill(struct fuse *f, fuse_req_t req, fuse_ino_t ino,
 		err = get_path(f, ino, &path);
 	if (!err) {
 		struct fuse_intr_data d;
-		fuse_fill_dir_t filler = fill_dir;
-
-		if (flags & FUSE_READDIR_PLUS)
-			filler = fill_dir_plus;
+		fuse_fill_dir_t filler =
+			(flags & FUSE_READDIR_PLUS) ? fill_dir_plus : fill_dir;
 
 		free_direntries(dh->first);
 		dh->first = NULL;
