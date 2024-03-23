@@ -122,6 +122,11 @@ static int xmp_readlink(const char *path, char *buf, size_t size)
 	return 0;
 }
 
+static int is_dot_or_dotdot(const char *name)
+{
+	return name[0] == '.' && (name[1] == '\0' ||
+				  (name[1] == '.' && name[2] == '\0'));
+}
 
 static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		       off_t offset, struct fuse_file_info *fi,
@@ -131,23 +136,53 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	struct dirent *de;
 
 	(void) offset;
-	(void) fi;
+	(void) path;
 	(void) flags;
 
-	dp = opendir(path);
+	int fd = dup(fi->fh);
+	if (fd < 0)
+		return -errno;
+	dp = fdopendir(fi->fh);
 	if (dp == NULL)
 		return -errno;
 
 	while ((de = readdir(dp)) != NULL) {
+		enum fuse_fill_dir_flags fill_flags = FUSE_FILL_DIR_DEFAULTS;
 		struct stat st;
+
+		if(is_dot_or_dotdot(de->d_name)) {
+			continue;
+		}
+
 		memset(&st, 0, sizeof(st));
-		st.st_ino = de->d_ino;
-		st.st_mode = de->d_type << 12;
-		if (filler(buf, de->d_name, &st, 0, fill_dir_plus))
+
+#ifdef HAVE_FSTATAT
+		if (flags & FUSE_READDIR_PLUS) {
+			int res;
+
+			res = fstatat(dirfd(dp), de->d_name, &st,
+				      AT_SYMLINK_NOFOLLOW);
+			if (res != -1)
+				fill_flags |= FUSE_FILL_DIR_PLUS;
+
+			fprintf(stderr, "%s fill_flags=%d\n",
+				de->d_name, fill_flags);
+		}
+#endif
+		if (!(fill_flags & FUSE_FILL_DIR_PLUS)) {
+			fprintf(stderr, "%s fill_flags not set\n",
+				de->d_name);
+			memset(&st, 0, sizeof(st));
+			st.st_ino = de->d_ino;
+			st.st_mode = de->d_type << 12;
+		}
+
+		if (filler(buf, de->d_name, &st, 0, fill_flags))
 			break;
 	}
 
 	closedir(dp);
+
 	return 0;
 }
 
@@ -319,6 +354,11 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 
 	fi->fh = res;
 	return 0;
+}
+
+static int xmp_open_dir(const char *path, struct fuse_file_info *fi)
+{
+	return xmp_open(path, fi);
 }
 
 static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
@@ -547,6 +587,7 @@ static const struct fuse_operations xmp_oper = {
 	.utimens	= xmp_utimens,
 #endif
 	.open		= xmp_open,
+	.opendir	= xmp_open_dir,
 	.create 	= xmp_create,
 	.read		= xmp_read,
 	.write		= xmp_write,
