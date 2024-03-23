@@ -45,6 +45,10 @@
 #include <sys/un.h>
 #endif
 #include <sys/time.h>
+
+#ifdef HAVE_SETXATTR
+#undef HAVE_SETXATTR
+#endif
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
@@ -66,6 +70,7 @@ static void *xmp_init(struct fuse_conn_info *conn,
 	// cfg->direct_io = 1;
 	   cfg->parallel_direct_writes = 1;
 
+#if 0
 	/* Pick up changes from lower filesystem right away. This is
 	   also necessary for better hardlink support. When the kernel
 	   calls the unlink() handler, it does not know the inode of
@@ -76,6 +81,7 @@ static void *xmp_init(struct fuse_conn_info *conn,
 	cfg->entry_timeout = 0;
 	cfg->attr_timeout = 0;
 	cfg->negative_timeout = 0;
+#endif
 
 	return NULL;
 }
