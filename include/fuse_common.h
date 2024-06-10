@@ -63,8 +63,8 @@ struct fuse_file_info {
 	unsigned int keep_cache : 1;
 
 	/** Can be filled by open/create, to allow parallel direct writes on this
-         *  file */
-        unsigned int parallel_direct_writes : 1;
+	  * file */
+	unsigned int parallel_direct_writes : 1;
 
 	/** Indicates a flush operation.  Set in flush operation, also
 	    maybe set in highlevel lock operation and lowlevel release

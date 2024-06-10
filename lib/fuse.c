@@ -53,6 +53,9 @@
 
 #define NODE_TABLE_MIN_SIZE 8192
 
+/* Workaround for accidentaly ABI breakage in commit a5eb7f2a0117 */
+static bool pdio_abi_heuristics= false;
+
 struct fuse_fs {
 	struct fuse_operations op;
 	void *user_data;
@@ -1661,9 +1664,22 @@ int fuse_fs_link(struct fuse_fs *fs, const char *oldpath, const char *newpath)
 	}
 }
 
+/* Workaround for ABI issue introduced in commit a5eb7f2a0117. */
+void fuse_pdio_flush_heuristics(struct fuse_file_info *fi)
+{
+	if (pdio_abi_heuristics) {
+		if (fi->parallel_direct_writes && !fi->flush) {
+			fi->flush = 1;
+			fi->parallel_direct_writes = 0;
+		}
+	}
+}
+
 int fuse_fs_release(struct fuse_fs *fs,	 const char *path,
 		    struct fuse_file_info *fi)
 {
+	fuse_pdio_flush_heuristics(fi);
+
 	fuse_get_context()->private_data = fs->user_data;
 	if (fs->op.release) {
 		if (fs->debug)
@@ -1677,6 +1693,18 @@ int fuse_fs_release(struct fuse_fs *fs,	 const char *path,
 	}
 }
 
+/* Workaround for ABI issue introduced in commit a5eb7f2a0117. */
+void fuse_pdio_opendir_heuristics(struct fuse_file_info *fi)
+{
+	if (pdio_abi_heuristics) {
+		if (fi->flock_release && !fi->cache_readdir) {
+			fi->flock_release = 0;
+			fi->cache_readdir = 1;
+		}
+	}
+}
+
+
 int fuse_fs_opendir(struct fuse_fs *fs, const char *path,
 		    struct fuse_file_info *fi)
 {
@@ -1689,6 +1717,7 @@ int fuse_fs_opendir(struct fuse_fs *fs, const char *path,
 				path);
 
 		err = fs->op.opendir(path, fi);
+		fuse_pdio_opendir_heuristics(fi);
 
 		if (fs->debug && !err)
 			fuse_log(FUSE_LOG_DEBUG, "   opendir[%llu] flags: 0x%x %s\n",
@@ -3376,6 +3405,7 @@ static void fuse_lib_opendir(fuse_req_t req, fuse_ino_t ino,
 	if (!err) {
 		fuse_prepare_interrupt(f, req, &d);
 		err = fuse_fs_opendir(f->fs, path, &fi);
+
 		fuse_finish_interrupt(f, req, &d);
 		dh->fh = fi.fh;
 		llfi->cache_readdir = fi.cache_readdir;
@@ -4105,8 +4135,11 @@ static void fuse_lib_release(fuse_req_t req, fuse_ino_t ino,
 	char *path;
 	int err = 0;
 
+	fuse_pdio_flush_heuristics(fi);
+
 	get_path_nullok(f, ino, &path);
 	if (fi->flush) {
+
 		err = fuse_flush_common(f, req, ino, path, fi);
 		if (err == -ENOSYS)
 			err = 0;
@@ -4754,7 +4787,7 @@ void fuse_lib_help(struct fuse_args *args)
 			   fuse_lib_opt_proc) == -1
 	    || !conf.modules)
 		return;
-	
+
 	char *module;
 	char *next;
 	struct fuse_module *m;
@@ -4772,7 +4805,7 @@ void fuse_lib_help(struct fuse_args *args)
 	}
 }
 
-				      
+
 
 static int fuse_init_intr_signal(int signum, int *installed)
 {
@@ -4995,6 +5028,8 @@ struct fuse *_fuse_new_317(struct fuse_args *args,
 	if (f->conf.debug) {
 		fuse_log(FUSE_LOG_DEBUG, "nullpath_ok: %i\n", f->conf.nullpath_ok);
 	}
+
+	pdio_abi_heuristics = f->se->parallel_direct_writes_heuristics;
 
 	/* Trace topmost layer by default */
 	f->fs->debug = f->conf.debug;

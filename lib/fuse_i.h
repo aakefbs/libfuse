@@ -8,6 +8,7 @@
 
 #include "fuse.h"
 #include "fuse_lowlevel.h"
+#include <stdbool.h>
 
 struct mount_opts;
 
@@ -66,10 +67,17 @@ struct fuse_session {
 	size_t bufsize;
 	int error;
 
-	/* This is useful if any kind of ABI incompatibility is found at
+	/*
+	 * This is useful if any kind of ABI incompatibility is found at
 	 * a later version, to 'fix' it at run time.
 	 */
 	struct libfuse_version version;
+
+	/*
+	 * commit a5eb7f2a0117 accidentlly broke the ABI, try to heuristically
+	 * fix it
+	 */
+	bool parallel_direct_writes_heuristics;
 };
 
 struct fuse_chan {

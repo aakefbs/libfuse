@@ -56,6 +56,10 @@ static __attribute__((constructor)) void fuse_ll_init_pagesize(void)
 	pagesize = getpagesize();
 }
 
+/* Workaround for accidentaly ABI breakage in commit a5eb7f2a0117 */
+static bool pdio_abi_heuristics= false;
+
+
 static void convert_stat(const struct stat *stbuf, struct fuse_attr *attr)
 {
 	attr->ino	= stbuf->st_ino;
@@ -403,9 +407,34 @@ size_t fuse_add_direntry_plus(fuse_req_t req, char *buf, size_t bufsize,
 	return entlen_padded;
 }
 
+/* Workaround for ABI issue introduced in commit a5eb7f2a0117. */
+static struct fuse_file_info
+fuse_pdio_open_heuristics(const struct fuse_file_info *fi)
+{
+	struct fuse_file_info new_fi = *fi;
+
+	if (pdio_abi_heuristics) {
+		if (fi->flush && !fi->nonseekable) {
+			new_fi.flush = 0;
+			new_fi.nonseekable = 1;
+		}
+
+		if (!fi->cache_readdir && fi->flock_release) {
+			new_fi.cache_readdir = 1;
+			new_fi.flock_release = 0;
+		}
+	}
+
+	return new_fi;
+}
+
 static void fill_open(struct fuse_open_out *arg,
 		      const struct fuse_file_info *f)
 {
+	struct fuse_file_info fi = *f;
+
+	fi = fuse_pdio_open_heuristics(&fi);
+
 	arg->fh = f->fh;
 	if (f->backing_id > 0) {
 		arg->backing_id = f->backing_id;
@@ -442,7 +471,7 @@ int fuse_reply_entry(fuse_req_t req, const struct fuse_entry_param *e)
 }
 
 int fuse_reply_create(fuse_req_t req, const struct fuse_entry_param *e,
-		      const struct fuse_file_info *f)
+		      const struct fuse_file_info *fi)
 {
 	char buf[sizeof(struct fuse_entry_out) + sizeof(struct fuse_open_out)];
 	size_t entrysize = req->se->conn.proto_minor < 9 ?
@@ -452,7 +481,7 @@ int fuse_reply_create(fuse_req_t req, const struct fuse_entry_param *e,
 
 	memset(buf, 0, sizeof(buf));
 	fill_entry(earg, e);
-	fill_open(oarg, f);
+	fill_open(oarg, fi);
 	return send_reply_ok(req, buf,
 			     entrysize + sizeof(struct fuse_open_out));
 }
@@ -3164,12 +3193,25 @@ struct fuse_session *_fuse_session_new_317(struct fuse_args *args,
 
 	se->mo = mo;
 
-	/* Fuse server application should pass the version it was compiled
+	/*
+	 * Fuse server application should pass the version it was compiled
 	 * against and pass it. If a libfuse version accidentally introduces an
 	 * ABI incompatibility, it might be possible to 'fix' that at run time,
 	 * by checking the version numbers.
 	 */
 	se->version = *version;
+
+	/*
+	 * Heuristically fix ABI incompatibilities introduced by commit
+	 * a5eb7f2a0117. There is no lower version limit as we only have
+	 * the libfuse version an application was compiled with since
+	 * libfuse-3.17
+	 */
+	if (FUSE_MAKE_VERSION(se->version.major, se->version.minor) <
+	    FUSE_MAKE_VERSION(3, 17)) {
+		se->parallel_direct_writes_heuristics = true;
+		pdio_abi_heuristics = true;
+	    }
 
 	return se;
 
