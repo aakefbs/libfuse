@@ -226,5 +226,5 @@ static const struct fuse_operations fioc_oper = {
 
 int main(int argc, char *argv[])
 {
-	return fuse_main(argc, argv, &fioc_oper, NULL);
+	return fuse_main_fn(argc, argv, &fioc_oper, NULL);
 }

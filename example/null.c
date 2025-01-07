@@ -139,5 +139,5 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	return fuse_main(argc, argv, &null_oper, NULL);
+	return fuse_main_fn(argc, argv, &null_oper, NULL);
 }

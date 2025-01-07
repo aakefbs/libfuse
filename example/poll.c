@@ -298,7 +298,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	ret = fuse_main(argc, argv, &fsel_oper, NULL);
+	ret = fuse_main_fn(argc, argv, &fsel_oper, NULL);
 
 	return ret;
 }

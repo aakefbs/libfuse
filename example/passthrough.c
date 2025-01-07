@@ -584,5 +584,5 @@ int main(int argc, char *argv[])
 			new_argv[new_argc++] = argv[i];
 		}
 	}
-	return fuse_main(new_argc, new_argv, &xmp_oper, NULL);
+	return fuse_main_fn(new_argc, new_argv, &xmp_oper, NULL);
 }

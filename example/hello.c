@@ -173,7 +173,7 @@ int main(int argc, char *argv[])
 		args.argv[0][0] = '\0';
 	}
 
-	ret = fuse_main(args.argc, args.argv, &hello_oper, NULL);
+	ret = fuse_main_fn(args.argc, args.argv, &hello_oper, NULL);
 	fuse_opt_free_args(&args);
 	return ret;
 }
